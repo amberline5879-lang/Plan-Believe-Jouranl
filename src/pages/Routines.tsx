@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion, AnimatePresence, Reorder } from 'motion/react';
-import { Play, CheckCircle2, Circle, Plus, GripVertical, ChevronRight, X, SkipForward, SkipBack, Pause, RotateCcw, Clock, Trash2, Check } from 'lucide-react';
+import { Play, CheckCircle2, Circle, Plus, GripVertical, ChevronRight, X, SkipForward, SkipBack, Pause, RotateCcw, Clock, Trash2, Check, RefreshCw } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useAuth } from '../components/AuthProvider';
 import { storage } from '../lib/storage';
 import { Routine, RoutineStep } from '../types';
+import confetti from 'canvas-confetti';
+
+const DING_SOUND_URL = 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3';
 
 const Routines: React.FC = () => {
   const { user } = useAuth();
@@ -77,20 +80,47 @@ const Routines: React.FC = () => {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const toggleStep = (id: string) => {
+  const playDing = () => {
+    const audio = new Audio(DING_SOUND_URL);
+    audio.play().catch(e => console.log('Audio play blocked:', e));
+  };
+
+  const triggerCelebration = () => {
+    playDing();
+    confetti({
+      particleCount: 150,
+      spread: 70,
+      origin: { y: 0.6 },
+      colors: ['#8C916C', '#C89B9B', '#A8B5A8', '#D1B3C4', '#D9C5B2']
+    });
+  };
+
+  const toggleStep = (id: string, index: number) => {
     const newSteps = [...steps];
     const idx = newSteps.findIndex(s => s.id === id);
     if (idx === -1) return;
 
-    newSteps[idx].completed = !newSteps[idx].completed;
+    const wasCompleted = newSteps[idx].completed;
+    newSteps[idx].completed = !wasCompleted;
     setSteps(newSteps);
     
-    // If we completed the current active step, move to next
-    if (id === activeStepId && newSteps[idx].completed) {
-      if (idx < steps.length - 1) {
-        const nextStep = steps[idx + 1];
-        setActiveStepId(nextStep.id);
-        setTimeLeft(nextStep.duration || 0);
+    // If we just completed a step
+    if (!wasCompleted) {
+      triggerCelebration();
+      
+      // If we completed the current active step, move to next
+      if (id === activeStepId) {
+        if (idx < steps.length - 1) {
+          const nextStep = steps[idx + 1];
+          setActiveStepId(nextStep.id);
+          setTimeLeft(nextStep.duration || 0);
+        } else {
+          // Routine complete!
+          setTimeout(() => {
+            triggerCelebration(); // Double celebration for finishing
+            alert("Routine Complete! Amazing job!");
+          }, 500);
+        }
       }
     }
   };
@@ -298,45 +328,73 @@ const Routines: React.FC = () => {
                 </div>
               </div>
 
-              {/* Steps List with Reordering and Ticking */}
-              <div className="flex-1 overflow-hidden flex flex-col space-y-4">
-                <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground px-2">Next Steps</h4>
-                <Reorder.Group axis="y" values={steps} onReorder={setSteps} className="flex-1 overflow-y-auto space-y-3 pr-2 scrollbar-hide">
-                  {steps.map((step) => (
-                    <Reorder.Item
-                      key={step.id}
-                      value={step}
-                      className={cn(
-                        "p-4 rounded-2xl border transition-all flex items-center gap-4",
-                        step.id === activeStepId ? "border-primary bg-primary/5 shadow-sm" : "border-border bg-card",
-                        step.completed && "opacity-50 grayscale"
-                      )}
-                    >
-                      <GripVertical className="w-5 h-5 text-muted-foreground/20 cursor-grab active:cursor-grabbing" />
-                      
-                      <button 
-                        onClick={() => toggleStep(step.id)}
+              {/* Steps List with Improved Reordering - Horizontal Scroller for "at the bottom" feel */}
+              <div className="space-y-4 pb-8">
+                <div className="flex items-center justify-between px-2">
+                  <h4 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Queue (Drag to Reorder)</h4>
+                  <span className="text-[10px] font-black text-primary/40">{steps.filter(s => s.completed).length}/{steps.length} Done</span>
+                </div>
+                
+                <div className="relative">
+                  <Reorder.Group 
+                    axis="x" 
+                    values={steps} 
+                    onReorder={setSteps} 
+                    className="flex gap-4 overflow-x-auto pb-4 px-2 scrollbar-hide"
+                  >
+                    {steps.map((step, idx) => (
+                      <Reorder.Item
+                        key={step.id}
+                        value={step}
                         className={cn(
-                          "w-8 h-8 rounded-full border-2 flex items-center justify-center transition-all",
-                          step.completed ? "bg-primary border-primary text-primary-foreground" : "border-muted-foreground/20"
+                          "flex-shrink-0 w-48 transition-all duration-300",
+                          "p-4 rounded-3xl border-2 flex flex-col gap-3",
+                          step.id === activeStepId ? "border-primary bg-primary/5 shadow-xl scale-105" : "border-border/50 bg-card",
+                          step.completed && "opacity-40 grayscale blur-[0.5px]"
                         )}
                       >
-                        {step.completed && <Check className="w-4 h-4" />}
-                      </button>
-
-                      <div className="flex-1">
-                        <h5 className={cn("text-sm font-bold", step.completed && "line-through")}>{step.title}</h5>
-                        <p className="text-[10px] text-muted-foreground font-medium">{formatTime(step.duration || 0)}</p>
-                      </div>
-
-                      {step.id === activeStepId && (
-                        <div className="px-2 py-1 rounded-full bg-primary/20 text-primary text-[8px] font-bold uppercase tracking-widest animate-pulse">
-                          Active
+                        <div className="flex justify-between items-start">
+                          <GripVertical className="w-4 h-4 text-muted-foreground/30 cursor-grab active:cursor-grabbing" />
+                          <button 
+                            onClick={() => toggleStep(step.id, idx)}
+                            className={cn(
+                              "w-8 h-8 rounded-full border-2 flex items-center justify-center transition-all shadow-sm",
+                              step.completed ? "bg-primary border-primary text-primary-foreground" : "bg-white border-muted-foreground/10 hover:border-primary/30"
+                            )}
+                          >
+                            {step.completed ? <Check className="w-4 h-4 stroke-[3]" /> : <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/20" />}
+                          </button>
                         </div>
-                      )}
-                    </Reorder.Item>
-                  ))}
-                </Reorder.Group>
+                        
+                        <div className="space-y-1">
+                          <h5 className={cn("text-xs font-black tracking-tight line-clamp-1", step.completed && "line-through")}>
+                            {step.title}
+                          </h5>
+                          <div className="flex items-center gap-1.5 text-[9px] font-bold text-muted-foreground uppercase opacity-60">
+                            <Clock className="w-2.5 h-2.5" />
+                            {formatTime(step.duration || 0)}
+                          </div>
+                        </div>
+
+                        {step.id === activeStepId && (
+                          <div className="mt-auto pt-2">
+                             <div className="h-1 w-full bg-primary/10 rounded-full overflow-hidden">
+                                <motion.div 
+                                  className="h-full bg-primary"
+                                  initial={{ width: "0%" }}
+                                  animate={{ width: `${(1 - timeLeft / (step.duration || 1)) * 100}%` }}
+                                />
+                             </div>
+                          </div>
+                        )}
+                      </Reorder.Item>
+                    ))}
+                  </Reorder.Group>
+                  
+                  {/* Visual cues for more content */}
+                  <div className="absolute right-0 top-0 bottom-4 w-12 bg-gradient-to-l from-white to-transparent pointer-events-none" />
+                  <div className="absolute left-0 top-0 bottom-4 w-12 bg-gradient-to-r from-white to-transparent pointer-events-none" />
+                </div>
               </div>
             </div>
           </motion.div>

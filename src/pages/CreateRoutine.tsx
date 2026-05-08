@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, Plus, Trash2, Clock, Save, Coffee, Sun, Moon, Zap, Activity, Heart, Brain, Sparkles } from 'lucide-react';
+import { ChevronLeft, Plus, Trash2, Clock, Save, Coffee, Sun, Moon, Zap, Activity, Heart, Brain, Sparkles, GripVertical } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useAuth } from '../components/AuthProvider';
 import { storage } from '../lib/storage';
-
-console.log("CreateRoutine.tsx file loaded");
+import { motion, Reorder } from 'motion/react';
 
 const ICONS = [
   { id: 'coffee', icon: Coffee },
@@ -25,64 +24,7 @@ interface StepEntry {
   icon: string;
 }
 
-const RoutineStepItem = ({ step, updateStep, removeStep }: { 
-  step: StepEntry, 
-  updateStep: (id: string, field: keyof StepEntry, value: string) => void,
-  removeStep: (id: string) => void 
-}) => {
-  return (
-    <div className="p-5 rounded-[2rem] bg-card border border-border shadow-sm flex items-center gap-4 group">
-      <div className="flex-1 space-y-4 min-w-0">
-        <div className="flex flex-col sm:flex-row gap-3">
-          <input
-            type="text"
-            value={step.title}
-            onChange={(e) => updateStep(step.id, 'title', e.target.value)}
-            placeholder="Step name..."
-            className="flex-1 bg-background border border-border/50 rounded-2xl p-4 text-sm font-bold focus:ring-2 focus:ring-primary placeholder:text-muted-foreground/30 transition-all"
-          />
-          <div className="relative w-full sm:w-28 flex-shrink-0">
-            <input
-              type="number"
-              value={step.duration}
-              onChange={(e) => updateStep(step.id, 'duration', e.target.value)}
-              className="w-full bg-background border border-border/50 rounded-2xl p-4 text-sm font-bold focus:ring-2 focus:ring-primary pr-12 transition-all"
-            />
-            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[8px] font-black text-muted-foreground/40 uppercase">min</span>
-          </div>
-        </div>
-
-        <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide px-1 -mx-1">
-          {ICONS.map(({ id, icon: Icon }) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => updateStep(step.id, 'icon', id)}
-              className={cn(
-                "p-3 rounded-xl transition-all flex-shrink-0 border-2",
-                step.icon === id 
-                  ? "bg-primary text-primary-foreground border-primary shadow-md scale-105" 
-                  : "bg-background text-muted-foreground/40 border-border/50 hover:border-primary/30 hover:text-primary"
-              )}
-            >
-              <Icon className="w-4 h-4" />
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <button 
-        onClick={() => removeStep(step.id)}
-        className="p-2 text-muted-foreground/30 hover:text-red-500 transition-all opacity-100 flex-shrink-0"
-      >
-        <Trash2 className="w-4 h-4" />
-      </button>
-    </div>
-  );
-};
-
 const CreateRoutine: React.FC = () => {
-  console.log("CreateRoutine component rendering");
   const navigate = useNavigate();
   const { user } = useAuth();
   const [title, setTitle] = useState('');
@@ -91,10 +33,6 @@ const CreateRoutine: React.FC = () => {
   ]);
   const [isSaving, setIsSaving] = useState(false);
 
-  useEffect(() => {
-    console.log("CreateRoutine useEffect, user:", user?.uid);
-  }, [user]);
-
   const addStep = () => {
     const newId = Math.random().toString(36).substring(2, 11);
     setSteps([...steps, { id: newId, title: '', duration: '5', icon: 'sun' }]);
@@ -102,51 +40,54 @@ const CreateRoutine: React.FC = () => {
 
   const removeStep = (id: string) => {
     if (steps.length > 1) {
-      setSteps(steps.filter(s => s.id !== id));
+      setSteps(prev => prev.filter(s => s.id !== id));
     }
   };
 
   const updateStep = (id: string, field: keyof StepEntry, value: string) => {
-    setSteps(steps.map(s => s.id === id ? { ...s, [field]: value } : s));
+    setSteps(prev => prev.map(s => s.id === id ? { ...s, [field]: value } : s));
   };
 
   const totalMinutes = steps.reduce((acc, s) => acc + (parseInt(s.duration) || 0), 0);
 
   const handleSave = async () => {
-    if (!title.trim()) return;
+    if (!title.trim() || !user) return;
     setIsSaving(true);
 
-    const order = Date.now();
-
-    const routineData = {
-      uid: user?.uid || 'guest',
-      name: title.trim(),
-      type: 'custom',
-      order,
-      steps: steps.map((s, idx) => ({
-        id: `s${idx}-${Math.random().toString(36).substring(2, 6)}`,
-        title: s.title || 'Untitled Step',
-        subtitle: `${s.duration} min`,
-        duration: (parseInt(s.duration) || 0) * 60,
-        icon: s.icon,
-        completed: false
-      })),
-      createdAt: new Date().toISOString()
-    };
-
     try {
+      const routineData = {
+        uid: user.uid,
+        name: title.trim(),
+        type: 'custom',
+        order: Date.now(),
+        steps: steps.map((s, idx) => ({
+          id: `s${idx}-${Math.random().toString(36).substring(2, 6)}`,
+          title: s.title || 'Untitled Step',
+          subtitle: `${s.duration} min`,
+          duration: (parseInt(s.duration) || 0) * 60,
+          icon: s.icon,
+          completed: false
+        })),
+        createdAt: new Date().toISOString()
+      };
+
       await storage.add(storage.key.ROUTINES, routineData);
       navigate('/routines');
     } catch (error) {
       console.error('Error saving routine:', error);
+      alert('Failed to save routine. Please try again.');
     } finally {
       setIsSaving(false);
     }
   };
 
   if (!user) {
-    console.log("CreateRoutine: No user, showing loading");
-    return <div className="p-8 text-center bg-red-50">Loading user profile... (If this persists, check auth)</div>;
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
+        <div className="w-8 h-8 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
+        <p className="text-sm font-medium text-muted-foreground">Preparing your routine creator...</p>
+      </div>
+    );
   }
 
   return (
@@ -188,16 +129,63 @@ const CreateRoutine: React.FC = () => {
             <span className="text-[10px] font-bold text-muted-foreground/40">{steps.length} items</span>
           </div>
 
-          <div className="space-y-3">
+          <Reorder.Group axis="y" values={steps} onReorder={setSteps} className="space-y-3">
             {steps.map((step) => (
-              <RoutineStepItem 
-                key={step.id} 
-                step={step} 
-                updateStep={updateStep} 
-                removeStep={removeStep} 
-              />
+              <Reorder.Item
+                key={step.id}
+                value={step}
+                className="p-5 rounded-[2rem] bg-card border border-border shadow-sm flex items-center gap-4 group"
+              >
+                <GripVertical className="w-5 h-5 text-muted-foreground/20 cursor-grab active:cursor-grabbing flex-shrink-0" />
+                
+                <div className="flex-1 space-y-4 min-w-0">
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <input
+                      type="text"
+                      value={step.title}
+                      onChange={(e) => updateStep(step.id, 'title', e.target.value)}
+                      placeholder="Step name..."
+                      className="flex-1 bg-background border border-border/50 rounded-2xl p-4 text-sm font-bold focus:ring-2 focus:ring-primary placeholder:text-muted-foreground/30 transition-all"
+                    />
+                    <div className="relative w-full sm:w-28 flex-shrink-0">
+                      <input
+                        type="number"
+                        value={step.duration}
+                        onChange={(e) => updateStep(step.id, 'duration', e.target.value)}
+                        className="w-full bg-background border border-border/50 rounded-2xl p-4 text-sm font-bold focus:ring-2 focus:ring-primary pr-12 transition-all"
+                      />
+                      <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[8px] font-black text-muted-foreground/40 uppercase">min</span>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide px-1 -mx-1">
+                    {ICONS.map(({ id: iconId, icon: Icon }) => (
+                      <button
+                        key={iconId}
+                        type="button"
+                        onClick={() => updateStep(step.id, 'icon', iconId)}
+                        className={cn(
+                          "p-3 rounded-xl transition-all flex-shrink-0 border-2",
+                          step.icon === iconId 
+                            ? "bg-primary text-primary-foreground border-primary shadow-md scale-105" 
+                            : "bg-background text-muted-foreground/40 border-border/50 hover:border-primary/30 hover:text-primary"
+                        )}
+                      >
+                        <Icon className="w-4 h-4" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <button 
+                  onClick={() => removeStep(step.id)}
+                  className="p-2 text-muted-foreground/30 hover:text-red-500 transition-all opacity-100 flex-shrink-0"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </Reorder.Item>
             ))}
-          </div>
+          </Reorder.Group>
 
           <button
             onClick={addStep}
